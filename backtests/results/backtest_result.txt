@@ -1,0 +1,36 @@
+Processando XAUUSDz...
+Processando BTCUSDz...
+
+=== TOP 20 por WIN RATE ===
+Par       TF   EMA      SL   VOL  Sess    RSI  H1      N    WR%    PF      Exp
+---------------------------------------------------------------------------
+BTCUSDz   M15  EMA20x50  2.5x OFF  ny      True True   13   61.5  6.12 +657.042
+BTCUSDz   M15  EMA20x50  1.5x OFF  ny      True True   13   61.5 10.20 +708.364
+BTCUSDz   M15  EMA20x50  2.0x OFF  ny      True True   13   61.5  7.65 +682.703
+XAUUSDz   M15  EMA20x50  2.5x 1.5x ny      True False  13   53.8  1.05   +1.253
+BTCUSDz   M15  EMA20x50  2.5x OFF  ny      FalseTrue   15   53.3  4.80 +538.819
+BTCUSDz   M15  EMA20x50  1.5x OFF  ny      FalseTrue   15   53.3  8.00 +595.544
+BTCUSDz   M15  EMA20x50  2.0x OFF  ny      FalseTrue   15   53.3  6.00 +567.182
+XAUUSDz   M15  EMA20x50  2.5x 1.3x ny      True False  16   50.0  0.97   -0.696
+BTCUSDz   M15  EMA10x30  2.5x OFF  ny      FalseTrue   26   50.0  2.41 +325.841
+XAUUSDz   M30  EMA13x34  2.5x 1.5x todas   FalseTrue   12   50.0  0.82   -4.289
+XAUUSDz   M15  EMA10x30  2.5x 1.3x london  True True   16   50.0  1.22   +3.473
+XAUUSDz   M15  EMA10x30  2.0x 1.3x london  True True   16   50.0  1.53   +6.603
+XAUUSDz   M30  EMA9x21  2.5x 1.5x london  FalseTrue   14   50.0  1.34   +5.651
+XAUUSDz   M30  EMA9x21  2.5x 1.5x todas   FalseTrue   16   50.0  1.45   +8.228
+XAUUSDz   M15  EMA20x50  2.5x 1.5x ny      FalseFalse  14   50.0  1.05   +1.164
+XAUUSDz   M30  EMA13x34  2.5x 1.5x todas   True True   12   50.0  0.82   -4.289
+XAUUSDz   M15  EMA20x50  2.5x 1.5x london  True False  16   50.0  0.99   -0.173
+XAUUSDz   M30  EMA9x21  2.5x 1.3x todas   FalseTrue   20   50.0  1.02   +0.554
+BTCUSDz   M15  EMA10x30  2.0x OFF  ny      FalseTrue   27   48.1  2.51 +322.821
+BTCUSDz   M15  EMA10x30  2.5x OFF  ny      True True   23   47.8  2.10 +287.708
+
+=== MELHOR POR PAR ===
+
+XAUUSDz: TF=M30 EMA20x50 SL=2.5x VOL=1.3x Sess=ny RSI=False H1=False
+  WR=35.7% | PF=7.03 | Trades=14 | Exp=+38.965 | MaxDD=-38.76
+
+BTCUSDz: TF=M15 EMA20x50 SL=1.5x VOL=OFF Sess=ny RSI=True H1=True
+  WR=61.5% | PF=10.20 | Trades=13 | Exp=+708.364 | MaxDD=-543.57
+
+FIM
