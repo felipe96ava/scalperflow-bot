@@ -9,12 +9,16 @@ import numpy as np
 from datetime import datetime
 import time
 
-# ── Credenciais ────────────────────────────────────────────────────
-LOGIN    = 83090423
-PASSWORD = 'aEzakmi931018@'
-SERVER   = 'Exness-MT5Trial12'
-PATH     = 'C:/Program Files/MetaTrader 5 EXNESS/terminal64.exe'
-MAGIC    = 654321
+# ── Credenciais (carregadas de config.py — nao commitado) ──────────
+try:
+    from config import LOGIN, PASSWORD, SERVER, PATH
+except ImportError:
+    raise SystemExit(
+        'ERRO: arquivo config.py nao encontrado.\n'
+        'Copie config.example.py para config.py e preencha suas credenciais.'
+    )
+
+MAGIC = 654321
 
 # ── Configuracao por par ───────────────────────────────────────────
 # estrategia: 'scalperflow' = cruzamento simples
