@@ -308,19 +308,19 @@ def gerenciar_tp(posicao, tick, atr):
             log(f'TP1! [{posicao.symbol}] Ticket={ticket} SL->breakeven={entry:.3f}')
         return
 
-    if nivel == 0:
-        dist_ativar = atr * TRAIL_ACTIVATE_ATR
-        dist_trail  = atr * TRAIL_DISTANCE_ATR
+    # Trailing ativo apenas apos TP2 (nivel >= 2), quando o SL ja esta no TP1
+    # Antes disso o trailing movia o SL para o breakeven prematuramente,
+    # causando saidas por pullbacks antes de atingir o TP3.
+    if nivel >= 2:
+        dist_trail = atr * TRAIL_DISTANCE_ATR
         if is_buy:
-            if preco - entry >= dist_ativar:
-                novo_sl = round(preco - dist_trail, 2)
-                if novo_sl > sl_atual and modificar_sl(posicao, novo_sl):
-                    log(f'TRAILING [{posicao.symbol}] Ticket={ticket} SL {sl_atual:.3f}->{novo_sl:.3f}')
+            novo_sl = round(preco - dist_trail, 2)
+            if novo_sl > sl_atual and modificar_sl(posicao, novo_sl):
+                log(f'TRAILING [{posicao.symbol}] Ticket={ticket} SL {sl_atual:.3f}->{novo_sl:.3f}')
         else:
-            if entry - preco >= dist_ativar:
-                novo_sl = round(preco + dist_trail, 2)
-                if novo_sl < sl_atual and modificar_sl(posicao, novo_sl):
-                    log(f'TRAILING [{posicao.symbol}] Ticket={ticket} SL {sl_atual:.3f}->{novo_sl:.3f}')
+            novo_sl = round(preco + dist_trail, 2)
+            if novo_sl < sl_atual and modificar_sl(posicao, novo_sl):
+                log(f'TRAILING [{posicao.symbol}] Ticket={ticket} SL {sl_atual:.3f}->{novo_sl:.3f}')
 
 # ── Inicializacao ──────────────────────────────────────────────────
 log('ScalperFlow Bot iniciado')
