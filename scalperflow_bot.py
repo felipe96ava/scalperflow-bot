@@ -1,6 +1,6 @@
 """
 ScalperFlow Bot - Estrategias por par
-XAUUSDz : Cruzamento EMA20x50 | M3+M5 | SL=2.0x
+XAUUSDz : Cruzamento EMA20x50 | M5 | SL=2.0x | H1 trend + ATR>=6
 BTCUSDz : Cruzamento EMA20x50 + RSI + H1 trend + Sessao NY | M15 | SL=1.5x
 """
 import MetaTrader5 as mt5
@@ -25,10 +25,11 @@ MAGIC = 654321
 #             'btc_filtered' = cruzamento + RSI + H1 + sessao NY
 SYMBOLS = {
     'XAUUSDz': {
-        'lot'      : 0.10,
-        'sl_atr'   : 2.0,
+        'lot'       : 0.10,
+        'sl_atr'    : 2.0,
         'estrategia': 'scalperflow',
-        'tfs'      : {'M3': mt5.TIMEFRAME_M3, 'M5': mt5.TIMEFRAME_M5},
+        'tfs'       : {'M5': mt5.TIMEFRAME_M5},  # M3 removido: gerava sinais duplicados
+        'atr_min'   : 6.0,                        # so opera com volatilidade suficiente
     },
     'BTCUSDz': {
         'lot'      : 0.20,
@@ -158,6 +159,48 @@ def detectar_absorcao(df):
     if not (vol_spike and rejeicao):
         return None
     return 'ABSORCAO_COMPRA' if row['close'] > row['open'] else 'ABSORCAO_VENDA'
+
+def avaliar_sinal_xau(df, cfg):
+    """
+    Estrategia XAU filtrada:
+    1. Cruzamento EMA20x50 OU Absorcao
+    2. ATR >= atr_min (evita mercado parado)
+    3. Tendencia H1 alinhada com a direcao
+    """
+    atr_val = df.iloc[-1]['atr']
+
+    # Filtro ATR minimo
+    atr_min = cfg.get('atr_min', 0)
+    if atr_val < atr_min:
+        return None, None
+
+    sinal_cross = detectar_cruzamento(df)
+    sinal_abs   = detectar_absorcao(df)
+
+    if sinal_abs == 'ABSORCAO_COMPRA':
+        sinal_final = 'SELL'
+        tipo_sinal  = 'Absorcao Compra -> SELL'
+    elif sinal_abs == 'ABSORCAO_VENDA':
+        sinal_final = 'BUY'
+        tipo_sinal  = 'Absorcao Venda -> BUY'
+    elif sinal_cross:
+        sinal_final = sinal_cross
+        tipo_sinal  = f'Cruzamento EMA {sinal_cross}'
+    else:
+        return None, None
+
+    # Filtro H1 trend
+    trend = tendencia_h1('XAUUSDz', df['time'].iloc[-1])
+    if trend is not None:
+        if sinal_final == 'BUY' and not trend:
+            log(f'[XAUUSDz] {tipo_sinal} bloqueado — H1 em baixa')
+            return None, None
+        if sinal_final == 'SELL' and trend:
+            log(f'[XAUUSDz] {tipo_sinal} bloqueado — H1 em alta')
+            return None, None
+
+    return sinal_final, f'[XAUUSDz][M5] {tipo_sinal} | ATR={atr_val:.2f} | H1 ok'
+
 
 def avaliar_sinal_btc(df, cfg):
     """
@@ -324,17 +367,18 @@ def gerenciar_tp(posicao, tick, atr):
 
 # ── Inicializacao ──────────────────────────────────────────────────
 log('ScalperFlow Bot iniciado')
-log('  XAUUSDz : lote=0.10 | M3+M5 | SL=2.0x | EMA crossover')
-log('  BTCUSDz : lote=0.20 | M15   | SL=1.5x | EMA + RSI + H1 + Sessao NY')
+log('  XAUUSDz : lote=0.10 | M5 | SL=2.0x | EMA crossover + H1 trend + ATR>=6')
+log('  BTCUSDz : lote=0.20 | M15 | SL=1.5x | EMA + RSI + H1 + Sessao NY')
 log(f'  TP1={TP1_ATR}x | TP2={TP2_ATR}x | TP3={TP3_ATR}x | EMA{EMA_FAST}x{EMA_SLW}')
 
 if not conectar():
     log('ERRO: Falha ao conectar no MT5')
     exit(1)
 
-# Pre-carregar H1 do BTC
-h1_cache['BTCUSDz'] = carregar_h1('BTCUSDz')
-log('H1 BTCUSDz carregado para filtro de tendencia')
+# Pre-carregar H1 de todos os simbolos
+for _sym in SYMBOLS:
+    h1_cache[_sym] = carregar_h1(_sym)
+    log(f'H1 {_sym} carregado para filtro de tendencia')
 
 _falhas_conexao  = 0
 _ultima_h1_update = 0   # timestamp do ultimo refresh do H1
@@ -355,9 +399,10 @@ while True:
 
         agora = time.time()
 
-        # Atualizar H1 a cada 15 minutos
+        # Atualizar H1 de todos os simbolos a cada 15 minutos
         if agora - _ultima_h1_update > 900:
-            h1_cache['BTCUSDz'] = carregar_h1('BTCUSDz')
+            for _sym in SYMBOLS:
+                h1_cache[_sym] = carregar_h1(_sym)
             _ultima_h1_update = agora
 
         # ── Iterar sobre cada par ─────────────────────────────────
@@ -386,11 +431,14 @@ while True:
                     dir_ema = 'ALTA' if diff > 0 else 'BAIXA'
                     pos_info = f'{len(posicoes)} pos' if posicoes else 'sem pos'
                     extra = ''
-                    if estrategia == 'btc_filtered':
+                    t_h1   = tendencia_h1(symbol, df_ref['time'].iloc[-1])
+                    h1_str = 'H1-ALTA' if t_h1 else ('H1-BAIXA' if t_h1 is not None else 'H1-?')
+                    if estrategia == 'scalperflow':
+                        atr_ok = 'ATR-OK' if atr_ref >= cfg.get('atr_min', 0) else f'ATR-BAIXO(<{cfg.get("atr_min",0)})'
+                        extra  = f' {atr_ok} {h1_str}'
+                    elif estrategia == 'btc_filtered':
                         h = cur['hour_utc']
                         ny = 'NY-OK' if cfg['sessao_h0'] <= h < cfg['sessao_h1'] else 'fora-NY'
-                        t_h1 = tendencia_h1(symbol, df_ref['time'].iloc[-1])
-                        h1_str = 'H1-ALTA' if t_h1 else ('H1-BAIXA' if t_h1 is not None else 'H1-?')
                         extra = f' RSI={cur["rsi"]:.0f} {ny} {h1_str}'
                     log(f'[{symbol}] Bid={tick.bid:.3f} | EMAd={diff:+.2f} | ATR={atr_ref:.2f} | {dir_ema}{extra} | {pos_info}')
 
@@ -403,21 +451,10 @@ while True:
                 barra_atual = df.iloc[-1]['time'] if 'time' in df.columns else None
                 atr_val     = df.iloc[-1]['atr']
 
-                # ── XAUUSDz: estrategia ScalperFlow original ──────
+                # ── XAUUSDz: EMA crossover + ATR min + H1 trend ──
                 if estrategia == 'scalperflow':
-                    sinal_cross = detectar_cruzamento(df)
-                    sinal_abs   = detectar_absorcao(df)
-
-                    if sinal_abs == 'ABSORCAO_COMPRA':
-                        sinal_final = 'SELL'
-                        sinal_tipo  = f'[{symbol}][{tf_nome}] Absorcao Compra -> SELL'
-                    elif sinal_abs == 'ABSORCAO_VENDA':
-                        sinal_final = 'BUY'
-                        sinal_tipo  = f'[{symbol}][{tf_nome}] Absorcao Venda -> BUY'
-                    elif sinal_cross:
-                        sinal_final = sinal_cross
-                        sinal_tipo  = f'[{symbol}][{tf_nome}] Cruzamento EMA {sinal_cross}'
-                    else:
+                    sinal_final, sinal_tipo = avaliar_sinal_xau(df, cfg)
+                    if sinal_final is None:
                         continue
 
                 # ── BTCUSDz: estrategia filtrada ──────────────────
