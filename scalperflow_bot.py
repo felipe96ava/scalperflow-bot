@@ -29,7 +29,7 @@ SYMBOLS = {
         'sl_atr'    : 2.0,
         'estrategia': 'scalperflow',
         'tfs'       : {'M5': mt5.TIMEFRAME_M5},  # M3 removido: gerava sinais duplicados
-        'atr_min'   : 6.0,                        # so opera com volatilidade suficiente
+        'atr_min'   : 3.0,                        # so opera com volatilidade suficiente
     },
     'BTCUSDz': {
         'lot'      : 0.20,
@@ -451,6 +451,12 @@ while True:
                 barra_atual = df.iloc[-1]['time'] if 'time' in df.columns else None
                 atr_val     = df.iloc[-1]['atr']
 
+                # Ignora se ja processou esta barra (evita logs/ordens duplicados)
+                chave = (symbol, tf_nome)
+                if barra_atual == ultima_barra[chave]:
+                    continue
+                ultima_barra[chave] = barra_atual
+
                 # ── XAUUSDz: EMA crossover + ATR min + H1 trend ──
                 if estrategia == 'scalperflow':
                     sinal_final, sinal_tipo = avaliar_sinal_xau(df, cfg)
@@ -465,12 +471,6 @@ while True:
 
                 else:
                     continue
-
-                chave = (symbol, tf_nome)
-                if barra_atual == ultima_barra[chave]:
-                    continue
-
-                ultima_barra[chave] = barra_atual
 
                 if posicoes:
                     log(f'Sinal {sinal_tipo} — posicao aberta, aguardando...')
