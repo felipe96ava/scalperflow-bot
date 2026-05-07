@@ -134,13 +134,29 @@ timeout /t 2 /nobreak >NUL
 goto tentar_move
 
 :move_ok
-echo Atualizacao concluida. Aguardando estabilizar...
-rem PyInstaller --onefile extrai para %TEMP%\_MEIxxxxx no startup.
-rem Sem essa pausa, o relancar pode falhar com "Failed to load Python DLL"
-rem porque o cleanup do _MEI antigo ainda esta em andamento.
-timeout /t 3 /nobreak >NUL
-echo Reiniciando...
-start "" "{current}"
+echo.
+echo ========================================
+echo   Atualizacao concluida com sucesso!
+echo ========================================
+echo.
+echo Aguardando 8 segundos para o sistema estabilizar
+echo (PyInstaller precisa desse tempo para extrair os arquivos
+echo  internos sem conflitar com o cleanup da versao anterior)...
+timeout /t 8 /nobreak >NUL
+
+echo.
+echo Iniciando bot atualizado...
+rem explorer.exe usa o ShellExecute do Windows, mais robusto que
+rem 'start' do cmd para .exes do PyInstaller --onefile.
+explorer "{current}"
+
+echo.
+echo Se o bot nao abrir automaticamente, abra manualmente:
+echo   {current}
+echo.
+echo Esta janela fechara em 10 segundos.
+timeout /t 10 /nobreak >NUL
+
 (goto) 2>nul & del "%~f0"
 """
     # cp1252 (default do cmd.exe pt-BR) — evita mojibake nas mensagens do .bat
