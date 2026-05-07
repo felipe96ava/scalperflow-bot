@@ -102,6 +102,10 @@ def _spawn_replacer(new_exe: Path) -> None:
     current = _current_exe_path()
     pid = os.getpid()
     bat = Path(tempfile.gettempdir()) / "scalperflow_update.bat"
+    # Apos o bot fechar (PID some), o Windows ainda pode segurar o file
+    # handle do .exe por alguns ms (especialmente PyInstaller --onefile).
+    # Por isso o move tem retry com delay crescente — sem isso o move
+    # falha com "Acesso negado" em uma fracao das tentativas.
     script = f"""@echo off
 echo Aguardando bot fechar (PID {pid})...
 :waitloop
@@ -110,16 +114,29 @@ if not errorlevel 1 (
     timeout /t 1 /nobreak >NUL
     goto waitloop
 )
-echo Substituindo executavel...
-move /Y "{new_exe}" "{current}" >NUL
-if errorlevel 1 (
-    echo ERRO ao substituir o executavel.
+echo Aguardando liberacao do executavel...
+timeout /t 2 /nobreak >NUL
+
+set RETRY=0
+:tentar_move
+echo Substituindo executavel (tentativa %RETRY%)...
+move /Y "{new_exe}" "{current}" >NUL 2>&1
+if not errorlevel 1 goto move_ok
+set /a RETRY+=1
+if %RETRY% GEQ 10 (
+    echo ERRO: nao foi possivel substituir o executavel apos 10 tentativas.
+    echo O arquivo novo esta em "{new_exe}".
+    echo Substitua manualmente e reabra o bot.
     pause
     exit /b 1
 )
+timeout /t 2 /nobreak >NUL
+goto tentar_move
+
+:move_ok
 echo Atualizacao concluida. Reiniciando...
 start "" "{current}"
-del "%~f0"
+(goto) 2>nul & del "%~f0"
 """
     # cp1252 (default do cmd.exe pt-BR) — evita mojibake nas mensagens do .bat
     bat.write_text(script, encoding="cp1252", errors="replace")
