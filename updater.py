@@ -169,26 +169,10 @@ timeout /t 10 /nobreak >NUL
     )
 
 
-def _show_dialog(local: str, remote: str, changelog: str, parent=None) -> str:
-    """
-    Popup Tkinter. Retorna 'update', 'later' ou 'skip'.
-
-    Se `parent` for fornecido, usa Toplevel modal — caminho preferido,
-    funciona com a mainloop ja existente da GUI principal.
-    Caso contrario (parent=None), cria um Tk root standalone com mainloop
-    proprio — fallback usado quando nao ha GUI ainda (ex: dev .py mode).
-    """
+def _build_dialog_widgets(root, local: str, remote: str, changelog: str, on_pick):
+    """Constroi os widgets do popup. on_pick(choice) eh chamado quando user clica."""
     import tkinter as tk
     from tkinter import scrolledtext
-
-    result = {"choice": "later"}
-
-    if parent is None:
-        root = tk.Tk()
-        is_toplevel = False
-    else:
-        root = tk.Toplevel(parent)
-        is_toplevel = True
 
     root.title("ScalperFlow - Nova versao disponivel")
     root.geometry("520x420")
@@ -207,43 +191,64 @@ def _show_dialog(local: str, remote: str, changelog: str, parent=None) -> str:
     btns = tk.Frame(root)
     btns.pack(pady=15)
 
-    def pick(choice):
-        result["choice"] = choice
-        root.destroy()
+    def click(choice):
+        try:
+            root.destroy()
+        finally:
+            on_pick(choice)
 
     tk.Button(btns, text="Atualizar agora", width=16, bg="#0a7", fg="white",
-              command=lambda: pick("update")).pack(side="left", padx=5)
+              command=lambda: click("update")).pack(side="left", padx=5)
     tk.Button(btns, text="Lembrar depois", width=16,
-              command=lambda: pick("later")).pack(side="left", padx=5)
+              command=lambda: click("later")).pack(side="left", padx=5)
     tk.Button(btns, text="Pular esta versao", width=16,
-              command=lambda: pick("skip")).pack(side="left", padx=5)
+              command=lambda: click("skip")).pack(side="left", padx=5)
 
+    # Centralizar na tela
     root.update_idletasks()
     x = (root.winfo_screenwidth() - root.winfo_width()) // 2
     y = (root.winfo_screenheight() - root.winfo_height()) // 2
     root.geometry(f"+{x}+{y}")
     root.attributes("-topmost", True)
 
-    if is_toplevel:
-        # main thread ja tem mainloop rodando: bloqueia ate fechar
-        root.transient(parent)
-        root.grab_set()
-        parent.wait_window(root)
-    else:
-        root.mainloop()
+    # Botao X tambem aciona "later"
+    root.protocol("WM_DELETE_WINDOW", lambda: click("later"))
 
+
+def _show_dialog_modal_standalone(local: str, remote: str, changelog: str) -> str:
+    """
+    Popup Tk standalone com mainloop proprio.
+    Usado em dev (.py mode sem GUI ja rodando).
+    """
+    import tkinter as tk
+
+    result = {"choice": "later"}
+    root = tk.Tk()
+    _build_dialog_widgets(root, local, remote, changelog,
+                          lambda choice: result.__setitem__("choice", choice))
+    root.mainloop()
     return result["choice"]
 
 
-def _show_progress_and_install(url: str, remote: str) -> None:
-    """Janela com barra de progresso baixando o .exe; ao terminar, substitui."""
+def _show_progress_and_install(url: str, remote: str, parent=None) -> None:
+    """
+    Janela com barra de progresso baixando o .exe; ao terminar, substitui.
+    Se parent for fornecido, usa Toplevel (nao bloqueia mainloop principal).
+    """
     import tkinter as tk
     from tkinter import ttk, messagebox
 
-    root = tk.Tk()
+    if parent is None:
+        root = tk.Tk()
+        is_toplevel = False
+    else:
+        root = tk.Toplevel(parent)
+        is_toplevel = True
+
     root.title("Baixando atualizacao...")
     root.geometry("400x130")
     root.resizable(False, False)
+    root.attributes("-topmost", True)
 
     tk.Label(root, text=f"Baixando ScalperFlow {remote}...", font=("Segoe UI", 10)).pack(pady=(15, 5))
     bar = ttk.Progressbar(root, length=360, mode="determinate")
@@ -252,31 +257,46 @@ def _show_progress_and_install(url: str, remote: str) -> None:
     status.pack()
 
     new_exe = Path(tempfile.gettempdir()) / f"{ASSET_NAME}.new"
-    state = {"ok": False}
+
+    def update_progress_ui(pct, done_mb, total_mb):
+        bar["value"] = pct
+        status.config(text=f"{pct:.1f}%  ({done_mb:.1f} / {total_mb:.1f} MB)")
+
+    def on_finish(ok):
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        if not ok:
+            print("[updater] falha no download")
+            try:
+                if parent:
+                    messagebox.showerror("Erro", "Falha ao baixar a atualizacao. Tente novamente mais tarde.", parent=parent)
+            except Exception:
+                pass
+            return
+        _spawn_replacer(new_exe)
+        print("[updater] atualizacao baixada. Encerrando para aplicar...")
+        os._exit(0)
 
     def worker():
         def progress(done, total):
             pct = done * 100 / total
-            bar["value"] = pct
-            status.config(text=f"{pct:.1f}%  ({done/1024/1024:.1f} / {total/1024/1024:.1f} MB)")
-            root.update_idletasks()
-        state["ok"] = _download(url, new_exe, on_progress=progress)
-        root.after(100, root.destroy)
+            done_mb = done / 1024 / 1024
+            total_mb = total / 1024 / 1024
+            # Schedule UI update on main thread (Tkinter nao eh thread-safe)
+            root.after(0, lambda: update_progress_ui(pct, done_mb, total_mb))
+        ok = _download(url, new_exe, on_progress=progress)
+        # Schedule completion handler on main thread
+        root.after(100, lambda: on_finish(ok))
 
     threading.Thread(target=worker, daemon=True).start()
-    root.mainloop()
 
-    if not state["ok"]:
-        try:
-            tk.Tk().withdraw()
-            messagebox.showerror("Erro", "Falha ao baixar a atualizacao. Tente novamente mais tarde.")
-        except Exception:
-            print("[updater] falha no download")
-        return
-
-    _spawn_replacer(new_exe)
-    print("[updater] atualizacao baixada. Encerrando para aplicar...")
-    os._exit(0)
+    if not is_toplevel:
+        # Standalone mode: precisa rodar mainloop proprio
+        root.mainloop()
+    # Em modo Toplevel, retornamos imediatamente — mainloop principal
+    # cuida do rendering, e os callbacks via root.after() executam neles.
 
 
 # Estado compartilhado entre thread daemon e main thread.
@@ -346,17 +366,35 @@ def handle_update_choice(info: dict, parent=None) -> None:
     """
     Chamado pela MAIN THREAD apos consume_pending_update retornar info.
     Mostra o dialogo, processa a escolha.
-    Se `parent` for fornecido, usa Toplevel modal (preferido).
-    Caso contrario, usa Tk standalone (fallback).
+
+    Modo assincrono (com parent): cria Toplevel nao-modal, retorna
+    imediatamente. Os botoes do popup invocam o callback diretamente
+    quando clicados — sem wait_window/mainloop aninhado, evita bloquear
+    o mainloop da GUI principal.
+
+    Modo standalone (parent=None): mainloop proprio. Usado em dev .py.
     """
+    import tkinter as tk
+
     if not _running_as_exe():
         print(f"[updater] nova versao: {info['remote']} (.py mode, sem auto-update)")
         return
 
-    choice = _show_dialog(info["local"], info["remote"], info["changelog"], parent=parent)
+    def on_pick(choice):
+        if choice == "skip":
+            _save_skip(info["remote"])
+        elif choice == "update":
+            _show_progress_and_install(info["asset_url"], info["remote"], parent=parent)
+        # 'later' nao faz nada: na proxima checagem o flag sera setado de novo
 
-    if choice == "skip":
-        _save_skip(info["remote"])
-    elif choice == "update":
-        _show_progress_and_install(info["asset_url"], info["remote"])
-    # 'later' nao faz nada: na proxima checagem o flag pendente sera setado de novo
+    if parent is None:
+        # Standalone (dev mode)
+        choice = _show_dialog_modal_standalone(info["local"], info["remote"], info["changelog"])
+        on_pick(choice)
+    else:
+        # Async — Toplevel nao-modal, callbacks dos botoes
+        top = tk.Toplevel(parent)
+        _build_dialog_widgets(top, info["local"], info["remote"], info["changelog"], on_pick)
+        # Sem grab_set/wait_window: deixa o mainloop principal renderizar.
+        # A janela aparece, _poll retorna imediatamente, callbacks executam
+        # quando o usuario clicar.
