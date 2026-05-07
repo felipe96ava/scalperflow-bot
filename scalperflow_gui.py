@@ -1101,7 +1101,11 @@ class ScalperFlowApp(ctk.CTk):
         self.stat_q  = queue.Queue()
 
         self._build_ui()
-        self._poll()
+        # Agenda primeiro _poll para depois do mainloop comecar.
+        # Sem isso, se o updater detectar nova versao MUITO rapido (durante
+        # __init__), _poll chama handle_update_choice -> wait_window que
+        # bloqueia mainloop antes dele iniciar. Resultado: janela nunca abre.
+        self.after(500, self._poll)
 
     # ── Layout ────────────────────────────────────────────────────
     def _build_ui(self):
