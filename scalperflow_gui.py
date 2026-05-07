@@ -1678,10 +1678,9 @@ class ScalperFlowApp(ctk.CTk):
 if __name__ == "__main__":
     try:
         from updater import check_for_update_async
-        # 60s = intervalo de TESTE da checagem periodica.
-        # Em producao, voltar para o default (1800s = 30min) para nao
-        # estourar o rate limit do GitHub (60 req/h sem auth).
-        check_for_update_async(__version__, interval_seconds=60)
+        # Default 1800s (30min): equilibra latencia da deteccao com rate
+        # limit do GitHub (60 req/h sem auth). 2 chamadas/h por bot.
+        check_for_update_async(__version__)
     except Exception as _e:
         print(f"[updater] indisponivel: {_e}")
 
