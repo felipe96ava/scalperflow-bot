@@ -35,7 +35,10 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX desabilitado: builds com UPX no GitHub Actions estavam falhando
+    # silenciosamente em --windowed mode (.exe abria sem janela visivel).
+    # Build local sem UPX abriu normal. Confirmado: UPX corrompendo o binario.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
