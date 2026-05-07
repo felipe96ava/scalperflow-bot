@@ -121,10 +121,12 @@ echo Atualizacao concluida. Reiniciando...
 start "" "{current}"
 del "%~f0"
 """
-    bat.write_text(script, encoding="utf-8")
+    # cp1252 (default do cmd.exe pt-BR) — evita mojibake nas mensagens do .bat
+    bat.write_text(script, encoding="cp1252", errors="replace")
+    # CREATE_NEW_CONSOLE sozinho: DETACHED_PROCESS conflita e faz o spawn falhar.
     subprocess.Popen(
         ["cmd.exe", "/c", str(bat)],
-        creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
         close_fds=True,
     )
 
