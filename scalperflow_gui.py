@@ -1658,6 +1658,15 @@ class ScalperFlowApp(ctk.CTk):
             self._poll_tick = 0
             if not (self.engine and self.engine.running):
                 self._atualizar_historico()
+        # Auto-update: thread daemon enfileira info quando detecta nova versao;
+        # main thread (aqui) eh quem mostra o dialogo (Tkinter nao eh thread-safe).
+        try:
+            from updater import consume_pending_update, handle_update_choice
+            pending = consume_pending_update()
+            if pending:
+                handle_update_choice(pending, parent=self)
+        except Exception as _e:
+            print(f"[updater] erro no _poll: {_e}")
         self.after(500, self._poll)
 
 

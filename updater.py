@@ -169,16 +169,27 @@ timeout /t 10 /nobreak >NUL
     )
 
 
-def _show_dialog(local: str, remote: str, changelog: str) -> str:
+def _show_dialog(local: str, remote: str, changelog: str, parent=None) -> str:
     """
     Popup Tkinter. Retorna 'update', 'later' ou 'skip'.
-    Tkinter eh stdlib, nao precisa de dependencia extra.
+
+    Se `parent` for fornecido, usa Toplevel modal — caminho preferido,
+    funciona com a mainloop ja existente da GUI principal.
+    Caso contrario (parent=None), cria um Tk root standalone com mainloop
+    proprio — fallback usado quando nao ha GUI ainda (ex: dev .py mode).
     """
     import tkinter as tk
     from tkinter import scrolledtext
 
     result = {"choice": "later"}
-    root = tk.Tk()
+
+    if parent is None:
+        root = tk.Tk()
+        is_toplevel = False
+    else:
+        root = tk.Toplevel(parent)
+        is_toplevel = True
+
     root.title("ScalperFlow - Nova versao disponivel")
     root.geometry("520x420")
     root.resizable(False, False)
@@ -212,7 +223,15 @@ def _show_dialog(local: str, remote: str, changelog: str) -> str:
     y = (root.winfo_screenheight() - root.winfo_height()) // 2
     root.geometry(f"+{x}+{y}")
     root.attributes("-topmost", True)
-    root.mainloop()
+
+    if is_toplevel:
+        # main thread ja tem mainloop rodando: bloqueia ate fechar
+        root.transient(parent)
+        root.grab_set()
+        parent.wait_window(root)
+    else:
+        root.mainloop()
+
     return result["choice"]
 
 
@@ -260,61 +279,84 @@ def _show_progress_and_install(url: str, remote: str) -> None:
     os._exit(0)
 
 
-def _check_once(local: str) -> bool:
-    """Faz uma checagem. Retorna True se deve continuar (ainda em loop),
-    False se deve parar (processo vai sair via os._exit)."""
-    try:
-        release = _fetch_latest_release()
-        if release is None:
-            return True
-
-        remote = release.get("tag_name", "")
-        if not remote or not _is_newer(remote, local):
-            return True
-
-        if _load_skip() == remote:
-            return True
-
-        asset_url = _find_asset(release)
-        if not asset_url:
-            return True  # release sem .exe ainda (build em andamento)
-
-        if not _running_as_exe():
-            # rodando como .py em dev: avisa e nao tenta substituir
-            print(f"[updater] nova versao disponivel: {remote} (rodando como .py, sem auto-update)")
-            return True
-
-        changelog = release.get("body", "").strip()
-        choice = _show_dialog(local, remote, changelog)
-
-        if choice == "skip":
-            _save_skip(remote)
-        elif choice == "update":
-            _show_progress_and_install(asset_url, remote)
-            return False  # nunca alcanca: os._exit dentro de _show_progress_and_install
-        # 'later' apenas continua o loop — pergunta de novo no proximo intervalo
-    except Exception as e:
-        print(f"[updater] erro na checagem: {e}")
-    return True
+# Estado compartilhado entre thread daemon e main thread.
+# Tkinter NAO eh thread-safe: dialogos precisam ser mostrados pela
+# main thread. Daemon thread apenas faz API call e enfileira info.
+_pending_lock = threading.Lock()
+_pending_update: dict | None = None
+_local_version_cache = ""
 
 
 def _check_worker(local: str, interval_seconds: int) -> None:
-    """Loop infinito: checa, dorme, checa de novo. Roda em thread daemon."""
+    """
+    Loop infinito em thread daemon: checa GitHub, enfileira info se houver
+    nova versao. NAO mostra dialogo (isso eh feito pela main thread).
+    """
+    global _pending_update, _local_version_cache
+    _local_version_cache = local
     while True:
-        if not _check_once(local):
-            return
+        try:
+            release = _fetch_latest_release()
+            if release is not None:
+                remote = release.get("tag_name", "")
+                if remote and _is_newer(remote, local) and _load_skip() != remote:
+                    asset_url = _find_asset(release)
+                    if asset_url:
+                        with _pending_lock:
+                            # so atualiza se nao tem nada pendente OU a versao mudou
+                            if _pending_update is None or _pending_update.get("remote") != remote:
+                                _pending_update = {
+                                    "local": local,
+                                    "remote": remote,
+                                    "asset_url": asset_url,
+                                    "changelog": release.get("body", "").strip(),
+                                }
+                                print(f"[updater] nova versao detectada: {remote}")
+        except Exception as e:
+            print(f"[updater] erro na checagem: {e}")
         time.sleep(interval_seconds)
 
 
 def check_for_update_async(local_version: str, interval_seconds: int = 1800) -> None:
     """
-    Inicia uma thread daemon que checa por updates a cada `interval_seconds`.
-    Primeira checagem eh imediata; depois espera o intervalo.
-    Default: 30 min (1800s) — equilibra latencia da deteccao com rate limit
-    do GitHub (60 req/h sem auth).
+    Inicia thread daemon que checa por updates periodicamente.
+    A main thread deve chamar `consume_pending_update()` regularmente
+    (ex: dentro de Tkinter `after()`) para ver se ha update e mostrar dialogo.
     """
     threading.Thread(
         target=_check_worker,
         args=(local_version, interval_seconds),
         daemon=True,
     ).start()
+
+
+def consume_pending_update() -> dict | None:
+    """
+    Chamado pela MAIN THREAD periodicamente. Retorna info da update pendente
+    (e a remove do estado), ou None se nao ha nada.
+    """
+    global _pending_update
+    with _pending_lock:
+        info = _pending_update
+        _pending_update = None
+        return info
+
+
+def handle_update_choice(info: dict, parent=None) -> None:
+    """
+    Chamado pela MAIN THREAD apos consume_pending_update retornar info.
+    Mostra o dialogo, processa a escolha.
+    Se `parent` for fornecido, usa Toplevel modal (preferido).
+    Caso contrario, usa Tk standalone (fallback).
+    """
+    if not _running_as_exe():
+        print(f"[updater] nova versao: {info['remote']} (.py mode, sem auto-update)")
+        return
+
+    choice = _show_dialog(info["local"], info["remote"], info["changelog"], parent=parent)
+
+    if choice == "skip":
+        _save_skip(info["remote"])
+    elif choice == "update":
+        _show_progress_and_install(info["asset_url"], info["remote"])
+    # 'later' nao faz nada: na proxima checagem o flag pendente sera setado de novo
