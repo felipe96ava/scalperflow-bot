@@ -108,3 +108,28 @@ Profit Factor: 1.19 | Win Rate: 26.7%
 - Python 3.8+
 - MetaTrader 5 instalado e logado
 - Conta com acesso aos pares XAUUSDz e BTCUSDz
+
+---
+
+## Auto-Update (.exe do cliente)
+
+O bot checa novas versoes automaticamente em [GitHub Releases](https://github.com/felipe96ava/scalperflow-bot/releases) ao iniciar.
+
+### Como o cliente recebe a atualizacao
+1. Ao abrir o `.exe`, o bot consulta o release mais recente.
+2. Se ha versao nova, abre um popup com changelog e 3 opcoes:
+   - **Atualizar agora** -> baixa o novo `.exe`, troca pelo atual e relanca
+   - **Lembrar depois** -> pergunta de novo na proxima execucao
+   - **Pular esta versao** -> nao avisa mais sobre essa versao especifica
+3. A troca usa um `.bat` helper porque o Windows trava o `.exe` em uso.
+
+### Como publicar uma nova versao (dev)
+```bash
+# 1. atualize __version__ em scalperflow_bot.py (semver: MAJOR.MINOR.PATCH)
+# 2. commit + tag + push
+git commit -am "release v1.1.0"
+git tag v1.1.0
+git push && git push --tags
+```
+
+A Action `.github/workflows/release.yml` builda o `.exe` com PyInstaller e cria o Release automaticamente. A tag (`v1.1.0`) precisa bater com `__version__` (`1.1.0`) — a Action falha se divergirem.

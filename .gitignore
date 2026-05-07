@@ -1,5 +1,6 @@
 # Credenciais e configuracoes sensiveis
 *.env
+config.py
 config_local.py
 credentials.py
 
