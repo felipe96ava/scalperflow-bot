@@ -134,7 +134,12 @@ timeout /t 2 /nobreak >NUL
 goto tentar_move
 
 :move_ok
-echo Atualizacao concluida. Reiniciando...
+echo Atualizacao concluida. Aguardando estabilizar...
+rem PyInstaller --onefile extrai para %TEMP%\_MEIxxxxx no startup.
+rem Sem essa pausa, o relancar pode falhar com "Failed to load Python DLL"
+rem porque o cleanup do _MEI antigo ainda esta em andamento.
+timeout /t 3 /nobreak >NUL
+echo Reiniciando...
 start "" "{current}"
 (goto) 2>nul & del "%~f0"
 """
@@ -239,37 +244,61 @@ def _show_progress_and_install(url: str, remote: str) -> None:
     os._exit(0)
 
 
-def _check_worker(local: str) -> None:
-    release = _fetch_latest_release()
-    if not release:
-        return
+def _check_once(local: str) -> bool:
+    """Faz uma checagem. Retorna True se deve continuar (ainda em loop),
+    False se deve parar (processo vai sair via os._exit)."""
+    try:
+        release = _fetch_latest_release()
+        if release is None:
+            return True
 
-    remote = release.get("tag_name", "")
-    if not remote or not _is_newer(remote, local):
-        return
+        remote = release.get("tag_name", "")
+        if not remote or not _is_newer(remote, local):
+            return True
 
-    if _load_skip() == remote:
-        return
+        if _load_skip() == remote:
+            return True
 
-    asset_url = _find_asset(release)
-    if not asset_url:
-        return  # release sem .exe ainda (build talvez em andamento)
+        asset_url = _find_asset(release)
+        if not asset_url:
+            return True  # release sem .exe ainda (build em andamento)
 
-    if not _running_as_exe():
-        # rodando como .py em dev: avisa no console e nao tenta substituir
-        print(f"[updater] nova versao disponivel: {remote} (rodando como .py, sem auto-update)")
-        return
+        if not _running_as_exe():
+            # rodando como .py em dev: avisa e nao tenta substituir
+            print(f"[updater] nova versao disponivel: {remote} (rodando como .py, sem auto-update)")
+            return True
 
-    changelog = release.get("body", "").strip()
-    choice = _show_dialog(local, remote, changelog)
+        changelog = release.get("body", "").strip()
+        choice = _show_dialog(local, remote, changelog)
 
-    if choice == "skip":
-        _save_skip(remote)
-    elif choice == "update":
-        _show_progress_and_install(asset_url, remote)
-    # 'later' nao faz nada: pergunta de novo na proxima execucao
+        if choice == "skip":
+            _save_skip(remote)
+        elif choice == "update":
+            _show_progress_and_install(asset_url, remote)
+            return False  # nunca alcanca: os._exit dentro de _show_progress_and_install
+        # 'later' apenas continua o loop — pergunta de novo no proximo intervalo
+    except Exception as e:
+        print(f"[updater] erro na checagem: {e}")
+    return True
 
 
-def check_for_update_async(local_version: str) -> None:
-    """Chama no startup do bot. Nao bloqueia."""
-    threading.Thread(target=_check_worker, args=(local_version,), daemon=True).start()
+def _check_worker(local: str, interval_seconds: int) -> None:
+    """Loop infinito: checa, dorme, checa de novo. Roda em thread daemon."""
+    while True:
+        if not _check_once(local):
+            return
+        time.sleep(interval_seconds)
+
+
+def check_for_update_async(local_version: str, interval_seconds: int = 1800) -> None:
+    """
+    Inicia uma thread daemon que checa por updates a cada `interval_seconds`.
+    Primeira checagem eh imediata; depois espera o intervalo.
+    Default: 30 min (1800s) — equilibra latencia da deteccao com rate limit
+    do GitHub (60 req/h sem auth).
+    """
+    threading.Thread(
+        target=_check_worker,
+        args=(local_version, interval_seconds),
+        daemon=True,
+    ).start()
