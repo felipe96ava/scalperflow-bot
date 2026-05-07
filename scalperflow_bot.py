@@ -3,6 +3,8 @@ ScalperFlow Bot - Estrategias por par
 XAUUSDz : Cruzamento EMA20x50 | M5 | SL=2.0x | H1 trend + ATR>=6
 BTCUSDz : Cruzamento EMA20x50 + RSI + H1 trend + Sessao NY | M15 | SL=1.5x
 """
+__version__ = "1.0.0"
+
 import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
@@ -366,7 +368,14 @@ def gerenciar_tp(posicao, tick, atr):
                 log(f'TRAILING [{posicao.symbol}] Ticket={ticket} SL {sl_atual:.3f}->{novo_sl:.3f}')
 
 # ── Inicializacao ──────────────────────────────────────────────────
-log('ScalperFlow Bot iniciado')
+log(f'ScalperFlow Bot iniciado (v{__version__})')
+
+try:
+    from updater import check_for_update_async
+    check_for_update_async(__version__)
+except Exception as _e:
+    log(f'updater indisponivel: {_e}')
+
 log('  XAUUSDz : lote=0.10 | M5 | SL=2.0x | EMA crossover + H1 trend + ATR>=6')
 log('  BTCUSDz : lote=0.20 | M15 | SL=1.5x | EMA + RSI + H1 + Sessao NY')
 log(f'  TP1={TP1_ATR}x | TP2={TP2_ATR}x | TP3={TP3_ATR}x | EMA{EMA_FAST}x{EMA_SLW}')
