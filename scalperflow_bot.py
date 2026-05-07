@@ -3,6 +3,8 @@ ScalperFlow Bot - Estrategias por par
 XAUUSDz : Cruzamento EMA20x50 | M5 | SL=2.0x | H1 trend + ATR>=6
 BTCUSDz : Cruzamento EMA20x50 + RSI + H1 trend + Sessao NY | M15 | SL=1.5x
 """
+__version__ = "1.0.0"
+
 import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
@@ -29,7 +31,7 @@ SYMBOLS = {
         'sl_atr'    : 2.0,
         'estrategia': 'scalperflow',
         'tfs'       : {'M5': mt5.TIMEFRAME_M5},  # M3 removido: gerava sinais duplicados
-        'atr_min'   : 6.0,                        # so opera com volatilidade suficiente
+        'atr_min'   : 3.0,                        # so opera com volatilidade suficiente
     },
     'BTCUSDz': {
         'lot'      : 0.20,
@@ -366,7 +368,14 @@ def gerenciar_tp(posicao, tick, atr):
                 log(f'TRAILING [{posicao.symbol}] Ticket={ticket} SL {sl_atual:.3f}->{novo_sl:.3f}')
 
 # ── Inicializacao ──────────────────────────────────────────────────
-log('ScalperFlow Bot iniciado')
+log(f'ScalperFlow Bot iniciado (v{__version__})')
+
+try:
+    from updater import check_for_update_async
+    check_for_update_async(__version__)
+except Exception as _e:
+    log(f'updater indisponivel: {_e}')
+
 log('  XAUUSDz : lote=0.10 | M5 | SL=2.0x | EMA crossover + H1 trend + ATR>=6')
 log('  BTCUSDz : lote=0.20 | M15 | SL=1.5x | EMA + RSI + H1 + Sessao NY')
 log(f'  TP1={TP1_ATR}x | TP2={TP2_ATR}x | TP3={TP3_ATR}x | EMA{EMA_FAST}x{EMA_SLW}')
@@ -451,6 +460,12 @@ while True:
                 barra_atual = df.iloc[-1]['time'] if 'time' in df.columns else None
                 atr_val     = df.iloc[-1]['atr']
 
+                # Ignora se ja processou esta barra (evita logs/ordens duplicados)
+                chave = (symbol, tf_nome)
+                if barra_atual == ultima_barra[chave]:
+                    continue
+                ultima_barra[chave] = barra_atual
+
                 # ── XAUUSDz: EMA crossover + ATR min + H1 trend ──
                 if estrategia == 'scalperflow':
                     sinal_final, sinal_tipo = avaliar_sinal_xau(df, cfg)
@@ -465,12 +480,6 @@ while True:
 
                 else:
                     continue
-
-                chave = (symbol, tf_nome)
-                if barra_atual == ultima_barra[chave]:
-                    continue
-
-                ultima_barra[chave] = barra_atual
 
                 if posicoes:
                     log(f'Sinal {sinal_tipo} — posicao aberta, aguardando...')

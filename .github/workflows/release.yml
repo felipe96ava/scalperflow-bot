@@ -1,0 +1,49 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Verify version matches tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          $code = Select-String -Path scalperflow_bot.py -Pattern '__version__\s*=\s*"([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+          if ($tag -ne $code) {
+            Write-Error "Tag ($tag) nao bate com __version__ ($code) em scalperflow_bot.py"
+            exit 1
+          }
+
+      - name: Build .exe
+        run: pyinstaller --onefile --name scalperflow-bot --noconfirm scalperflow_bot.py
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ScalperFlow ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/scalperflow-bot.exe
