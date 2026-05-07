@@ -3,6 +3,7 @@
 config.py
 config_local.py
 credentials.py
+gui_config.json
 
 # Logs
 *.log

@@ -32,18 +32,41 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}".TrimStart('v')
-          $code = Select-String -Path scalperflow_bot.py -Pattern '__version__\s*=\s*"([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+          $code = Select-String -Path version.py -Pattern '__version__\s*=\s*"([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value }
           if ($tag -ne $code) {
-            Write-Error "Tag ($tag) nao bate com __version__ ($code) em scalperflow_bot.py"
+            Write-Error "Tag ($tag) nao bate com __version__ ($code) em version.py"
+            exit 1
+          }
+          Write-Host "Versao validada: $tag"
+
+      - name: Sanity check — no credenciais embutidas
+        shell: pwsh
+        run: |
+          if (Test-Path config.py) {
+            Write-Error "config.py nao deveria estar no repo (esta no .gitignore)"
+            exit 1
+          }
+          if (Test-Path gui_config.json) {
+            Write-Error "gui_config.json nao deveria estar no repo (esta no .gitignore)"
             exit 1
           }
 
-      - name: Build .exe
-        run: pyinstaller --onefile --name scalperflow-bot --noconfirm scalperflow_bot.py
+      - name: Build .exe (GUI via .spec)
+        run: pyinstaller ScalperFlowBot.spec --noconfirm
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path dist/ScalperFlowBot.exe)) {
+            Write-Error "Build falhou: dist/ScalperFlowBot.exe nao encontrado"
+            exit 1
+          }
+          $size = (Get-Item dist/ScalperFlowBot.exe).Length / 1MB
+          Write-Host ("Build OK: dist/ScalperFlowBot.exe ({0:N1} MB)" -f $size)
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: ScalperFlow ${{ github.ref_name }}
           generate_release_notes: true
-          files: dist/scalperflow-bot.exe
+          files: dist/ScalperFlowBot.exe

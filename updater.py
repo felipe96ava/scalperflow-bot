@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = "felipe96ava/scalperflow-bot"
-ASSET_NAME = "scalperflow-bot.exe"   # nome do .exe no Release
+ASSET_NAME = "ScalperFlowBot.exe"   # nome do .exe no Release (bate com ScalperFlowBot.spec)
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 SKIP_FILE = Path(os.getenv("APPDATA", tempfile.gettempdir())) / "scalperflow" / "skip.json"
 
